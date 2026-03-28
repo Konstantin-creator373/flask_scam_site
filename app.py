@@ -1,250 +1,400 @@
-from flask import Flask, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, session
 
 app = Flask(__name__)
+app.secret_key = 'super_secret_key_change_this'  # Нужен для работы сессий
 
+# Список вопросов (можно легко редактировать)
+QUESTIONS = [
+    {
+        'id': 1,
+        'question': 'Как вас зовут?',
+        'type': 'text',
+        'placeholder': 'Введите ваше имя'
+    },
+    {
+        'id': 2,
+        'question': 'Сколько вам лет?',
+        'type': 'number',
+        'placeholder': 'Введите возраст'
+    },
+    {
+        'id': 3,
+        'question': 'Какой ваш любимый цвет?',
+        'type': 'choice',
+        'options': ['Красный', 'Синий', 'Зелёный', 'Жёлтый', 'Другой']
+    },
+    {
+        'id': 4,
+        'question': 'Нравится ли вам программировать?',
+        'type': 'choice',
+        'options': ['Да, очень!', 'Иногда', 'Нет, не особо']
+    },
+    {
+        'id': 5,
+        'question': 'Оставьте комментарий (необязательно)',
+        'type': 'text',
+        'placeholder': 'Ваши пожелания...',
+        'required': False
+    }
+]
 
-# Дополнительный маршрут для страницы мессенджера (опционально)
-@app.route('/messenger-max')
-def messenger_page():
-    return """
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <title>Загрузка Max Messenger</title>
-        <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f0f2f5; }
-            .box { background: white; padding: 40px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-            h1 { color: #007bff; }
-            .loader { margin: 20px auto; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        </style>
-    </head>
-    <body>
-        <div class="box">
-            <h1>🚀 Загрузка Max Messenger...</h1>
-            <p>Если загрузка не началась автоматически, <a href="#">нажмите сюда</a>.</p>
-            <div class="loader"></div>
+# HTML-шаблон главной страницы (вопросы)
+QUESTION_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Опрос | Вопрос {{ current_question + 1 }} из {{ total_questions }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .question-number {
+            color: #667eea;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .question-text {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 30px;
+            line-height: 1.4;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        .form-control {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .choice-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .choice-option {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+        }
+        .choice-option:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        .choice-option input {
+            margin-right: 15px;
+            width: 20px;
+            height: 20px;
+        }
+        .choice-option.selected {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .error {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 10px;
+            display: none;
+        }
+        .error.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ ((current_question + 1) / total_questions) * 100 }}%"></div>
         </div>
-    </body>
-    </html>
-    """
+
+        <div class="question-number">Вопрос {{ current_question + 1 }} из {{ total_questions }}</div>
+        <h1 class="question-text">{{ question.question }}</h1>
+
+        <form id="questionForm" method="POST" action="/submit_answer">
+            {% if question.type == 'text' or question.type == 'number' %}
+                <div class="form-group">
+                    <input 
+                        type="{{ question.type }}" 
+                        name="answer" 
+                        class="form-control" 
+                        placeholder="{{ question.placeholder }}"
+                        {% if question.get('required', True) %}required{% endif %}
+                    >
+                </div>
+            {% elif question.type == 'choice' %}
+                <div class="form-group choice-group">
+                    {% for option in question.options %}
+                        <label class="choice-option">
+                            <input type="radio" name="answer" value="{{ option }}" required>
+                            {{ option }}
+                        </label>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="error" id="errorMsg">Пожалуйста, ответьте на вопрос</div>
+            <button type="submit" class="btn">
+                {% if current_question + 1 < total_questions %}
+                    Далее →
+                {% else %}
+                    Завершить ✓
+                {% endif %}
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // Подсветка выбранных вариантов
+        document.querySelectorAll('.choice-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.choice-option').forEach(o => o.classList.remove('selected'));
+                this.classList.add('selected');
+            });
+        });
+
+        // Валидация формы
+        document.getElementById('questionForm').addEventListener('submit', function(e) {
+            const answer = document.querySelector('[name="answer"]:checked') || 
+                          document.querySelector('[name="answer"]').value;
+            if (!answer) {
+                e.preventDefault();
+                document.getElementById('errorMsg').classList.add('show');
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+
+# HTML-шаблон страницы результатов
+RESULT_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результаты опроса</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        .success-icon {
+            font-size: 60px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .answers-list {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+        .answer-item {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .answer-item:last-child {
+            border-bottom: none;
+        }
+        .answer-question {
+            color: #666;
+            font-size: 14px;
+            flex: 1;
+        }
+        .answer-value {
+            color: #667eea;
+            font-weight: 600;
+            text-align: right;
+            flex: 1;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">🎉</div>
+        <h1>Спасибо за ответы!</h1>
+
+        <ul class="answers-list">
+            {% for item in answers %}
+            <li class="answer-item">
+                <span class="answer-question">{{ item.question }}</span>
+                <span class="answer-value">{{ item.answer }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <a href="/restart" class="btn">Пройти заново ↻</a>
+    </div>
+</body>
+</html>
+"""
 
 
 @app.route('/')
-def home():
-    # ЗАМЕНИТЕ ЭТУ ССЫЛКУ НА РЕАЛЬНЫЙ АДРЕС СТРАНИЦЫ МЕССЕНДЖЕРА
-    MESSENGER_URL = "https://trk.mail.ru/c/h172vv5"  # Или внешний URL, например: "https://max-messenger.com/download"
+def index():
+    # Инициализация сессии при первом заходе
+    if 'current_question' not in session:
+        session['current_question'] = 0
+        session['answers'] = []
 
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Установщик игры | Безопасная загрузка</title>
-        <style>
-            body, html {{
-                height: 100%;
-                margin: 0;
-                font-family: 'Segoe UI', Arial, sans-serif;
-                background-color: #f0f2f5;
-                color: #333;
-            }}
-            .main-wrapper {{
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                padding: 20px;
-                box-sizing: border-box;
-            }}
-            .card {{
-                background: white;
-                padding: 40px;
-                border-radius: 16px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-                max-width: 800px;
-                width: 100%;
-                text-align: center;
-            }}
-            h1 {{
-                margin-top: 0;
-                color: #1a1a1a;
-                font-size: 32px;
-            }}
-            .subtitle {{
-                color: #666;
-                margin-bottom: 30px;
-                font-size: 18px;
-            }}
-            .features {{
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 20px;
-                margin: 30px 0;
-                text-align: left;
-            }}
-            .feature-item {{
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 20px;
-                flex: 1 1 200px;
-                max-width: 220px;
-            }}
-            .feature-icon {{
-                font-size: 24px;
-                margin-bottom: 10px;
-                display: block;
-            }}
-            .feature-title {{
-                font-weight: bold;
-                color: #007bff;
-                margin-bottom: 5px;
-                display: block;
-            }}
-            .feature-text {{
-                font-size: 14px;
-                color: #555;
-                line-height: 1.4;
-            }}
-            .security-badge {{
-                display: inline-block;
-                background: #d4edda;
-                color: #155724;
-                padding: 8px 16px;
-                border-radius: 20px;
-                font-size: 14px;
-                margin-bottom: 20px;
-                border: 1px solid #c3e6cb;
-            }}
-            .download-btn {{
-                padding: 18px 40px;
-                font-size: 20px;
-                font-weight: bold;
-                color: white;
-                background: linear-gradient(135deg, #007bff, #0056b3);
-                border: none;
-                border-radius: 50px;
-                cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
-                box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
-                margin-top: 10px;
-                text-decoration: none; /* Убираем подчеркивание для ссылки */
-                display: inline-block;
-            }}
-            .download-btn:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(0, 123, 255, 0.6);
-            }}
-            .download-btn:active {{
-                transform: translateY(0);
-            }}
-            .install-info {{
-                margin-top: 30px;
-                padding-top: 20px;
-                border-top: 1px solid #eee;
-                text-align: left;
-                background: #fafafa;
-                padding: 20px;
-                border-radius: 8px;
-            }}
-            .install-info h3 {{
-                margin-top: 0;
-                color: #333;
-                font-size: 18px;
-            }}
-            .install-steps {{
-                list-style: none;
-                padding: 0;
-                margin: 0;
-            }}
-            .install-steps li {{
-                padding: 8px 0;
-                font-size: 14px;
-                color: #555;
-                position: relative;
-                padding-left: 25px;
-            }}
-            .install-steps li:before {{
-                content: "✓";
-                position: absolute;
-                left: 0;
-                color: #28a745;
-                font-weight: bold;
-            }}
-            .file-type {{
-                display: inline-block;
-                background: #e2e6ea;
-                padding: 2px 8px;
-                border-radius: 4px;
-                font-family: monospace;
-                font-weight: bold;
-                color: #495057;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="main-wrapper">
-            <div class="card">
-                <h1>🎮 Добро пожаловать</h1>
-                <p class="subtitle">Безопасная установка игры на ваш компьютер</p>
+    current_q = session['current_question']
 
-                <div class="security-badge">
-                    🔒 Проверено антивирусом • Безопасно • Официальный релиз
-                </div>
+    # Если все вопросы пройдены - redirect на результаты
+    if current_q >= len(QUESTIONS):
+        return redirect(url_for('results'))
 
-                <div class="features">
-                    <div class="feature-item">
-                        <span class="feature-icon">🛡️</span>
-                        <span class="feature-title">Безопасность</span>
-                        <span class="feature-text">Все файлы проходят проверку на вирусы перед публикацией.</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">⚡</span>
-                        <span class="feature-title">Быстрая установка</span>
-                        <span class="feature-text">Автоматический установщик настроит всё за 2 минуты.</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">✅</span>
-                        <span class="feature-title">Официально</span>
-                        <span class="feature-text">Лицензионный продукт с технической поддержкой.</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">🔐</span>
-                        <span class="feature-title">Приватность</span>
-                        <span class="feature-text">Мы не собираем личные данные без вашего согласия.</span>
-                    </div>
-                </div>
+    return render_template_string(
+        QUESTION_TEMPLATE,
+        question=QUESTIONS[current_q],
+        current_question=current_q,
+        total_questions=len(QUESTIONS)
+    )
 
-                <!-- КНОПКА ТЕПЕРЬ ЯВЛЯЕТСЯ ССЫЛКОЙ -->
-                <a href="{MESSENGER_URL}" class="download-btn" target="_blank">
-                    📥 Скачать установщик
-                </a>
 
-                <p style="font-size: 12px; color: #888; margin-top: 10px;">
-                    Формат файла: <span class="file-type">.msi</span> • Размер: ~2.5 GB
-                </p>
+@app.route('/submit_answer', methods=['POST'])
+def submit_answer():
+    answer = request.form.get('answer', '').strip()
 
-                <div class="install-info">
-                    <h3>📋 Как установить .msi файл:</h3>
-                    <ul class="install-steps">
-                        <li>Скачайте установочный файл <span class="file-type">.msi</span></li>
-                        <li>Запустите файл двойным кликом мыши</li>
-                        <li>Подтвердите запуск в окне безопасности Windows</li>
-                        <li>Следуйте инструкциям мастера установки</li>
-                        <li>Запустите игру через ярлык на рабочем столе</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return html_content
+    if not answer:
+        return redirect(url_for('index'))  # Если пусто - остаёмся на том же вопросе
+
+    # Сохраняем ответ
+    if 'answers' not in session:
+        session['answers'] = []
+
+    session['answers'].append({
+        'question': QUESTIONS[session['current_question']]['question'],
+        'answer': answer
+    })
+
+    # Переход к следующему вопросу
+    session['current_question'] += 1
+    session.modified = True
+
+    return redirect(url_for('index'))
+
+
+@app.route('/results')
+def results():
+    if 'answers' not in session or not session['answers']:
+        return redirect(url_for('index'))
+
+    return render_template_string(
+        RESULT_TEMPLATE,
+        answers=session['answers']
+    )
+
+
+@app.route('/restart')
+def restart():
+    # Сброс сессии
+    session.clear()
+    return redirect(url_for('index'))
 
 
 if __name__ == '__main__':
