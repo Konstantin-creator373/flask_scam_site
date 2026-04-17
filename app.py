@@ -1,44 +1,47 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
 app = Flask(__name__)
-app.secret_key = 'super_secret_key_change_this'  # Нужен для работы сессий
+app.secret_key = 'super_secret_key_change_this'
 
-# Список вопросов (можно легко редактировать)
 QUESTIONS = [
     {
         'id': 1,
-        'question': 'Как вас зовут?',
-        'type': 'text',
-        'placeholder': 'Введите ваше имя'
-    },
-    {
-        'id': 2,
         'question': 'Сколько вам лет?',
-        'type': 'number',
+        'type': 'text',
         'placeholder': 'Введите возраст'
     },
     {
-        'id': 3,
-        'question': 'Какой ваш любимый цвет?',
+        'id': 2,
+        'question': 'Есть ли у вас родственники с деменцией?',
         'type': 'choice',
-        'options': ['Красный', 'Синий', 'Зелёный', 'Жёлтый', 'Другой']
+        'options': ['Да', 'Нет']
+    },
+    {
+        'id': 3,
+        'question': 'Замечали ли вы у себя ухудшение краткосрочной памяти?',
+        'type': 'choice',
+        'options': ['Да', 'Иногда', 'Нет']
     },
     {
         'id': 4,
-        'question': 'Нравится ли вам программировать?',
+        'question': 'Бывает ли вам трудно выполнить повседневные дела которые вы выполняли много раз?',
         'type': 'choice',
-        'options': ['Да, очень!', 'Иногда', 'Нет, не особо']
+        'options': ['Да', 'Иногда', 'Нет']
     },
-    {
+{
         'id': 5,
-        'question': 'Оставьте комментарий (необязательно)',
-        'type': 'text',
-        'placeholder': 'Ваши пожелания...',
-        'required': False
+        'question': 'Замечали ли вы у себя безпричинную агрессию?',
+        'type': 'choice',
+        'options': ['Да', 'Иногда', 'Нет']
+},
+{
+        'id': 5,
+        'question': 'Замечали ли вы у себя проблемы с речью и мышлением?',
+        'type': 'choice',
+        'options': ['Да', 'Иногда', 'Нет']
     }
 ]
 
-# HTML-шаблон главной страницы (вопросы)
 QUESTION_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ru">
@@ -229,7 +232,6 @@ QUESTION_TEMPLATE = """
 </html>
 """
 
-# HTML-шаблон страницы результатов
 RESULT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ru">
@@ -337,14 +339,12 @@ RESULT_TEMPLATE = """
 
 @app.route('/')
 def index():
-    # Инициализация сессии при первом заходе
     if 'current_question' not in session:
         session['current_question'] = 0
         session['answers'] = []
 
     current_q = session['current_question']
 
-    # Если все вопросы пройдены - redirect на результаты
     if current_q >= len(QUESTIONS):
         return redirect(url_for('results'))
 
@@ -361,9 +361,8 @@ def submit_answer():
     answer = request.form.get('answer', '').strip()
 
     if not answer:
-        return redirect(url_for('index'))  # Если пусто - остаёмся на том же вопросе
+        return redirect(url_for('index'))
 
-    # Сохраняем ответ
     if 'answers' not in session:
         session['answers'] = []
 
@@ -392,10 +391,12 @@ def results():
 
 @app.route('/restart')
 def restart():
-    # Сброс сессии
     session.clear()
     return redirect(url_for('index'))
 
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
